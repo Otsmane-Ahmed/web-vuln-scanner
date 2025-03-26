@@ -39,8 +39,8 @@ A powerful and feature-rich web application vulnerability scanner that helps ide
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/crawler.git
-cd crawler
+git clone https://github.com/Otsmane-Ahmed/web-vuln-scanner.git
+cd web-vuln-scanner
 ```
 
 2. Install required packages:
