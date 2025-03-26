@@ -7,7 +7,7 @@
 
 A powerful and feature-rich web application vulnerability scanner that helps identify SQL Injection and Cross-Site Scripting (XSS) vulnerabilities in web applications. This tool is designed for security professionals and developers to perform security assessments of their web applications.
 
-## 🚀 Features
+##  Features
 
 - **SQL Injection Detection**
   - Error-based SQLi detection
@@ -29,13 +29,13 @@ A powerful and feature-rich web application vulnerability scanner that helps ide
   - URL crawling with depth control
   - Error handling and retry mechanisms
 
-## 📋 Prerequisites
+##  Prerequisites
 
 - Python 3.6 or higher
 - Tor service (optional, for proxy support)
 - Required Python packages (install via `pip install -r requirements.txt`)
 
-## 🛠️ Installation
+##  Installation
 
 1. Clone the repository:
 ```bash
@@ -53,7 +53,7 @@ pip install -r requirements.txt
    - Start the Tor service
    - The default Tor SOCKS proxy port is 9050
 
-## ⚙️ Configuration
+##  Configuration
 
 The scanner uses a `config.json` file for configuration. You can modify the following settings:
 
@@ -83,7 +83,7 @@ The scanner uses a `config.json` file for configuration. You can modify the foll
 }
 ```
 
-## 🚀 Usage
+##  Usage
 
 ### Basic Usage
 
@@ -113,14 +113,14 @@ Available options:
 - `--output-dir`: Directory for output files
 - `--max-errors`: Maximum number of errors per URL before skipping
 
-## 📊 Output
+##  Output
 
 The scanner generates:
 1. HTML reports in the `reports/` directory
 2. URL lists in the `urls/` directory
 3. Log files in the `logs/` directory
 
-## 🔒 Security Considerations
+##  Security Considerations
 
 - Always obtain proper authorization before scanning any website
 - Use responsibly and in accordance with applicable laws and regulations
@@ -128,7 +128,7 @@ The scanner generates:
 - Consider using Tor proxy for anonymous scanning
 - Review and adjust configuration settings based on target environment
 
-## 🤝 Contributing
+##  Contributing
 
 We welcome contributions! Please follow these steps:
 
@@ -141,22 +141,22 @@ We welcome contributions! Please follow these steps:
 
 Please read our [Contributing Guidelines](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
-## 📝 License
+##  License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## ⚠️ Disclaimer
+##  Disclaimer
 
 This tool is for educational and authorized security testing purposes only. The authors are not responsible for any misuse or damage caused by this program.
 
-## 📞 Support
+##  Support
 
 If you encounter any issues or have questions, please:
 1. Check the [Issues](https://github.com/yourusername/crawler/issues) page
 2. Create a new issue if your problem isn't already listed
 3. Join our [Discussions](https://github.com/yourusername/crawler/discussions) for general questions
 
-## 🔄 Roadmap
+##  Roadmap
 
 - [ ] Add support for more vulnerability types
 - [ ] Implement advanced crawling strategies
@@ -166,7 +166,7 @@ If you encounter any issues or have questions, please:
 - [ ] Implement authentication handling
 - [ ] Add support for different output formats
 
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 - Thanks to all contributors who have helped shape this project
 - Special thanks to the open-source community for their valuable tools and libraries 
