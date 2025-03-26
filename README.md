@@ -149,12 +149,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 This tool is for educational and authorized security testing purposes only. The authors are not responsible for any misuse or damage caused by this program.
 
-##  Support
 
-If you encounter any issues or have questions, please:
-1. Check the [Issues](https://github.com/yourusername/crawler/issues) page
-2. Create a new issue if your problem isn't already listed
-3. Join our [Discussions](https://github.com/yourusername/crawler/discussions) for general questions
 
 ##  Roadmap
 
@@ -166,7 +161,4 @@ If you encounter any issues or have questions, please:
 - [ ] Implement authentication handling
 - [ ] Add support for different output formats
 
-##  Acknowledgments
-
-- Thanks to all contributors who have helped shape this project
-- Special thanks to the open-source community for their valuable tools and libraries 
+**Developed with ❤️ by Otsmane Ahmed**
