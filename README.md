@@ -3,7 +3,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Maintenance](https://img.shields.io/badge/maintained%3F-yes-green.svg)](https://github.com/yourusername/crawler/graphs/commit-activity)
+[![Maintenance](https://img.shields.io/badge/maintained%3F-yes-green.svg)](https://github.com/Otsmane-Ahmed/web-vuln-scanner/graphs/commit-activity)
 
 A powerful and feature-rich web application vulnerability scanner that helps identify SQL Injection and Cross-Site Scripting (XSS) vulnerabilities in web applications. This tool is designed for security professionals and developers to perform security assessments of their web applications.
 
